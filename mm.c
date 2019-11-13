@@ -74,8 +74,18 @@ team_t team = {
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
+/* Access this block's pointers */
+#define FWD_PTR(bp) (char *)(*((char *)(bp) + WSIZE))
+#define BCK_PTR(bp) (char *)(*((char *)(bp)))
+
+/* Set the pointers for this block */
+#define SET_FWD_PTR(bp, ptr) (FWD_PTR(bp) = ptr)
+#define SET_BCK_PPTR(bp, ptr) (BCK_PTR(bp) = ptr)
+
 /* Global variables */
+// THIS VARIABLE UNNEEDED IN NEW IMPLEMENTATION
 static char *heap_listp = 0;  /* Pointer to first block */
+static char *start_flist = 0; /* Pointer to start of our explicit free list */
 
 /* Function prototypes for internal helper routines */
 static void *extend_heap(size_t words);
@@ -102,7 +112,11 @@ static void *coalesce(void *bp);
      PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */
      PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
      PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
+
+     // Current, not needed in explicit list implementation
      heap_listp += (2*WSIZE);
+     // Modified
+     start_flist = heap_listp;
 
      if(extend_heap(CHUNKSIZE/WSIZE) == NULL) {
        return -1;
@@ -114,6 +128,9 @@ static void *coalesce(void *bp);
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
+ *
+ * No changes to mm_malloc needed for explicit list implementation, all
+ * substantive changes will happen in helper functions
  */
 void *mm_malloc(size_t size)
 {
@@ -121,12 +138,10 @@ void *mm_malloc(size_t size)
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
 
-    /* $end mmmalloc */
     if (heap_listp == 0){
         mm_init();
     }
 
-    /* $begin mmmalloc */
     /* Ignore spurious requests */
     if (size == 0)
         return NULL;
@@ -159,10 +174,11 @@ void mm_free(void *ptr)
 
     size_t size = GET_SIZE(HDRP(ptr));
 
-    /* $begin mmfree */
-
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
+
+    // TODO: update free pointers
+
     coalesce(ptr);
 }
 
@@ -216,7 +232,6 @@ static void *extend_heap(size_t words)
     /* Coalesce if the previous block was free */
     return coalesce(bp);
 }
-
 
 
 /*
