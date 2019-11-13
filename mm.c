@@ -79,10 +79,10 @@ team_t team = {
 /* Access this block's pointers. Argument bp is a pointer to the
 * first byte of payload in this block. Pointer to previous free
 * block is located at bp, and the forward pointer immediately follows */
-#define BCK_PTR(bp) (char *)(*((char *)(bp)))
-#define FWD_PTR(bp) (char *)(*((char *)(bp) + WSIZE))
+#define BCK_PTR(bp) (*(char**)(bp))
+#define FWD_PTR(bp) (*(char **)(bp + WSIZE))
 /* Set the pointers for this block */
-#define SET_BCK_PPTR(bp, ptr) (BCK_PTR(bp) = ptr)
+#define SET_BCK_PTR(bp, ptr) (BCK_PTR(bp) = ptr)
 #define SET_FWD_PTR(bp, ptr) (FWD_PTR(bp) = ptr)
 
 /* Global variables */
@@ -309,5 +309,15 @@ static void place(void *bp, size_t asize)
   else {
       PUT(HDRP(bp), PACK(csize, 1));
       PUT(FTRP(bp), PACK(csize, 1));
+
+      // Case 1: The block we're allocating is the first item in our free list
+      if (bp == start_flist) {
+        start_flist = FWD_PTR(bp);
+        // NOTE: MAYBE NEED TO THINK ABOUT PREVIOUS POINTER
+      } else { // Case 2: Block we're allocating is anywhere but the head
+        SET_FWD_PTR(BCK_PTR(bp), FWD_PTR(bp));
+        SET_BCK_PTR(FWD_PTR(bp), BCK_PTR(bp));
+      }
+
   }
 }
