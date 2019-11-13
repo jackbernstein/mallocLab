@@ -118,7 +118,7 @@ static void *coalesce(void *bp);
      // Artifact from implicit list implementation
      heap_listp += (2*WSIZE);
      // New for explicit list implementation. Initially, the start of the
-     // free list points to the end. 
+     // free list points to the end.
      start_flist = heap_listp;
 
      if(extend_heap(CHUNKSIZE/WSIZE) == NULL) {
@@ -284,7 +284,7 @@ static void *find_fit(size_t asize)
   /* First-fit search */
   void* bp;
 
-  for(bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+  for(bp = start_flist; GET_SIZE(HDRP(bp)) > 0; bp = FWD_PTR(bp)) {
     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
       return bp;
     }
