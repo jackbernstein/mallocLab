@@ -38,7 +38,7 @@ team_t team = {
 
 
 /*********************************************************
- * MACROS & CONSTANTS
+ * MACROS & CONSTANTS (from book)
  ********************************************************/
 
 /* single word (4) or double word (8) alignment */
@@ -74,16 +74,18 @@ team_t team = {
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
-/* Access this block's pointers */
-#define FWD_PTR(bp) (char *)(*((char *)(bp) + WSIZE))
-#define BCK_PTR(bp) (char *)(*((char *)(bp)))
 
+/* MACROS FOR EXPLICIT LIST IMPLEMENTATION */
+/* Access this block's pointers. Argument bp is a pointer to the
+* first byte of payload in this block. Pointer to previous free
+* block is located at bp, and the forward pointer immediately follows */
+#define BCK_PTR(bp) (char *)(*((char *)(bp)))
+#define FWD_PTR(bp) (char *)(*((char *)(bp) + WSIZE))
 /* Set the pointers for this block */
-#define SET_FWD_PTR(bp, ptr) (FWD_PTR(bp) = ptr)
 #define SET_BCK_PPTR(bp, ptr) (BCK_PTR(bp) = ptr)
+#define SET_FWD_PTR(bp, ptr) (FWD_PTR(bp) = ptr)
 
 /* Global variables */
-// THIS VARIABLE UNNEEDED IN NEW IMPLEMENTATION
 static char *heap_listp = 0;  /* Pointer to first block */
 static char *start_flist = 0; /* Pointer to start of our explicit free list */
 
@@ -113,9 +115,10 @@ static void *coalesce(void *bp);
      PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
      PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
 
-     // Current, not needed in explicit list implementation
+     // Artifact from implicit list implementation
      heap_listp += (2*WSIZE);
-     // Modified
+     // New for explicit list implementation. Initially, the start of the
+     // free list points to the end. 
      start_flist = heap_listp;
 
      if(extend_heap(CHUNKSIZE/WSIZE) == NULL) {
