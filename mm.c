@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -24,7 +25,7 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "back_row_boiz",
     /* First member's full name */
     "Jack Bernstein",
     /* First member's email address */
@@ -52,6 +53,8 @@ team_t team = {
 #define WSIZE       4       /* Word and header/footer size (bytes) */
 #define DSIZE       8       /* Double word size (bytes) */
 #define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */
+#define OVERHEAD    24      /* Minimum block size */
+
 
 #define MAX(x, y) ((x) > (y)? (x) : (y))
 
@@ -66,6 +69,8 @@ team_t team = {
 #define GET_SIZE(p)  (GET(p) & ~0x7)
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
+#define GET_ALIGN(p) (GET(p) & 0x7)
+
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp)       ((char *)(bp) - WSIZE)
 #define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
@@ -79,10 +84,10 @@ team_t team = {
 /* Access this block's pointers. Argument bp is a pointer to the
 * first byte of payload in this block. Pointer to previous free
 * block is located at bp, and the forward pointer immediately follows */
-#define BCK_PTR(bp) (*(char**)(bp))
+#define BACK_PTR(bp) (*(char**)(bp))
 #define FWD_PTR(bp) (*(char **)(bp + WSIZE))
 /* Set the pointers for this block */
-#define SET_BCK_PTR(bp, ptr) (BCK_PTR(bp) = ptr)
+#define SET_BACK_PTR(bp, ptr) (BACK_PTR(bp) = ptr)
 #define SET_FWD_PTR(bp, ptr) (FWD_PTR(bp) = ptr)
 
 /* Global variables */
@@ -96,7 +101,9 @@ static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
 static void flist_remove(void *bp);
 static void flist_add(void *bp);
-static void free_split(void *fwd, void *bck, void *bp);
+
+static void printblock(void *bp);
+static void checkblock(void *bp);
 
 
 /*********************************************************
@@ -108,26 +115,23 @@ static void free_split(void *fwd, void *bck, void *bp);
  *
  * Borrowed from textbook
  */
- int mm_init(void)
- {
-     /* Create the initial empty heap */
-     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
-         return -1;
-     PUT(heap_listp, 0);                          /* Alignment padding */
-     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */
-     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
-     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
+ int mm_init(void) {
 
-     // Artifact from implicit list implementation
-     heap_listp += (2*WSIZE);
-     // New for explicit list implementation. Initially, the start of the
-     // free list points to the end.
-     start_flist = heap_listp;
+  /* Create the initial empty heap. */
+  if ((heap_listp = mem_sbrk(4*WSIZE)) == NULL)
+    return -1;
 
-     if(extend_heap(CHUNKSIZE/WSIZE) == NULL) {
-       return -1;
-     }
-     return 0;
+  PUT(heap_listp, 0);                            /* Alignment padding */
+  PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1)); /* Prologue header */
+  PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
+  PUT(heap_listp + (3 * WSIZE), PACK(0, 1));     /* Epilogue header */
+  start_flist = heap_listp + 2*WSIZE;
+
+  /* Extend the empty heap with a free block of minimum possible block size */
+  if (extend_heap(4) == NULL){
+    return -1;
+  }
+  return 0;
 }
 
 
@@ -140,6 +144,7 @@ static void free_split(void *fwd, void *bck, void *bp);
  */
 void *mm_malloc(size_t size)
 {
+    printf("START\n");
     size_t asize;      /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
@@ -147,6 +152,7 @@ void *mm_malloc(size_t size)
     if (heap_listp == 0){
         mm_init();
     }
+    printf("INITIALIZED\n");
 
     /* Ignore spurious requests */
     if (size == 0)
@@ -158,36 +164,42 @@ void *mm_malloc(size_t size)
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
 
-
-
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
+        printf("FIT FOUND\n");
         place(bp, asize);
+        printf("PLACED1\n");
         return bp;
     }
+
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize,CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
         return NULL;
+    printf("HEAP EXTENDED\n");
     place(bp, asize);
+    printf("PLACED 2\n");
+    printf("GOODBYE\n");
+
     return bp;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
 
-    size_t size = GET_SIZE(HDRP(ptr));
+    if(bp == NULL) return;
 
-    PUT(HDRP(ptr), PACK(size, 0));
-    PUT(FTRP(ptr), PACK(size, 0));
+    size_t size = GET_SIZE(HDRP(bp));
 
-    // TODO: update free pointers
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
 
-    coalesce(ptr);
+    coalesce(bp);
+
 }
 
 /*
@@ -229,18 +241,25 @@ static void *extend_heap(size_t words)
 
     /* Allocate an even number of words to maintain alignment */
     size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
-    if ((long)(bp = mem_sbrk(size)) == -1)
-        return NULL;
 
     size = MAX(size, 2 * DSIZE);
+
+    if ((long)(bp = mem_sbrk(size)) == -1)
+        return NULL;
 
     /* Initialize free block header/footer and the epilogue header */
     PUT(HDRP(bp), PACK(size, 0));         /* Free block header */
     PUT(FTRP(bp), PACK(size, 0));         /* Free block footer */
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */
 
+
+    flist_add(bp);
+
+
+    return bp;
+
     /* Coalesce if the previous block was free */
-    return coalesce(bp);
+    //return coalesce(bp);
 }
 
 
@@ -254,37 +273,47 @@ static void *coalesce(void *bp)
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if (prev_alloc && next_alloc) {            /* Case 1 */
+    // if (prev_alloc && next_alloc) {            /* Case 1 */
         flist_add(bp);
         return bp;
-    }
+    // }
+    //
+    // else if (prev_alloc && !next_alloc) {      /* Case 2 */
+    //     size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+    //     PUT(HDRP(bp), PACK(size, 0));
+    //     PUT(FTRP(bp), PACK(size,0));
+    //     /* Set next block's forward and back pointers to point to
+    //     the new, larger block */
+    //     SET_FWD_PTR(BACK_PTR(NEXT_BLKP(bp)), bp);
+    //     SET_BACK_PTR(FWD_PTR(NEXT_BLKP(bp)), bp);
+    //     /* Set the new, bigger block to point to the same forward
+    //     and back blocks as before */
+    //     SET_FWD_PTR(bp, FWD_PTR(NEXT_BLKP(bp)));
+    //     SET_BACK_PTR(bp, BACK_PTR(NEXT_BLKP(bp)));
+    // }
+    //
+    // else if (!prev_alloc && next_alloc) {      /* Case 3 */
+    //     size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+    //     PUT(FTRP(bp), PACK(size, 0));
+    //     PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+    //     bp = PREV_BLKP(bp);
+    //     /* Don't need to mess with pointers. Incoming and outgoing pointers from
+    //     previous block should do the trick */
+    // }
+    //
+    // else {                                     /* Case 4 */
+    //     size += GET_SIZE(HDRP(PREV_BLKP(bp))) +
+    //         GET_SIZE(FTRP(NEXT_BLKP(bp)));
+    //     PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+    //     PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+    //     bp = PREV_BLKP(bp);
+    //     // First, set the first block's forward pointer to the
+    //     // last blocks forward pointer
+    //     SET_FWD_PTR(PREV_BLKP(bp), FWD_PTR(NEXT_BLKP(bp)));
+    //     SET_BACK_PTR(FWD_PTR(NEXT_BLKP(bp)), PREV_BLKP(bp));
+    // }
 
-    else if (prev_alloc && !next_alloc) {      /* Case 2 */
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size,0));
-        SET_FWD_PTR(BCK_PTR(NEXT_BLKP(bp)), bp);
-        SET_BCK_PTR(FWD_PTR(NEXT_BLKP(bp)), bp);
-        SET_FWD_PTR(bp, FWD_PTR(NEXT_BLKP(bp)));
-        SET_BCK_PTR(bp, BCK_PTR(NEXT_BLKP(bp)));
-    }
-
-    else if (!prev_alloc && next_alloc) {      /* Case 3 */
-        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-    }
-
-    else {                                     /* Case 4 */
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) +
-            GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-    }
-
-    return bp;
+    // return bp;
 }
 
 /*
@@ -296,7 +325,7 @@ static void *find_fit(size_t asize)
   /* First-fit search */
   void* bp;
 
-  for(bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+  for(bp = start_flist; GET_ALLOC(HDRP(bp)) == 0; bp = FWD_PTR(bp)) {
     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
       return bp;
     }
@@ -312,54 +341,133 @@ static void place(void *bp, size_t asize)
   size_t csize = GET_SIZE(HDRP(bp));
 
   // Case 1: There is enough leftover space to split the block
-  if ((csize - asize) >= (2*DSIZE)) {
-      PUT(HDRP(bp), PACK(asize, 1));
-      PUT(FTRP(bp), PACK(asize, 1));
-      void *back = BCK_PTR(bp);
-      void *fwd  = FWD_PTR(bp);
-      bp = NEXT_BLKP(bp);
-      PUT(HDRP(bp), PACK(csize-asize, 0));
-      PUT(FTRP(bp), PACK(csize-asize, 0));
-      free_split(back, fwd, bp);
+  // if ((csize - asize) >= (2*DSIZE)) {
 
-  }
+      // // Step 1: update size and status of bp
+      // PUT(HDRP(bp), PACK(asize, 1));
+      // PUT(FTRP(bp), PACK(asize, 1));
+      //
+      // flist_remove(bp);
+      //
+      // // A pointer to the leftover section
+      // void* temp = NEXT_BLKP(bp);
+      //
+      // // Step 2: update size and status of bp
+      // PUT(HDRP(bp), PACK(csize-asize, 0));
+      // PUT(FTRP(bp), PACK(csize-asize, 0));
+      //
+      // // Step 3: Set bp's back ptr's fwd point to leftover
+      // SET_FWD_PTR(BACK_PTR(bp), temp);
+      //
+      // // Step 4: Set leftover's back pointer to bp's back pointer
+      // SET_BACK_PTR(temp, BACK_PTR(bp));
+      //
+      // // Step 5: Set bp's forward pointer's back pointer to leftover
+      // SET_BACK_PTR(FWD_PTR(bp), temp);
+      //
+      // // Step 6: Set leftover's forward pointer to bp's forward point
+      // SET_FWD_PTR(temp, FWD_PTR(bp));
+
   // Case 2: we don't have extra space, so allocate the whole block
-  else {
+  // else {
       PUT(HDRP(bp), PACK(csize, 1));
       PUT(FTRP(bp), PACK(csize, 1));
-      //flist_remove(bp);
-  }
+      // Step 1: Set back pointer's forward pointer to bp's forward pointer
+      // SET_FWD_PTR(BACK_PTR(bp), FWD_PTR(bp));
+      // Step 2: Set forward pointer's back pointer to bp's back pointer
+      // SET_BACK_PTR(FWD_PTR(bp), BACK_PTR(bp));
+      // printf("ABOUT TO REMOVE\n");
+      flist_remove(bp);
+      // printf("REMOVED\n");
+  // }
 }
 
-static void free_split(void* back, void* fwd, void* bp) {
-  SET_BCK_PTR(bp, back);
-  SET_FWD_PTR(bp, fwd);
-}
 
 /*
 * Remove the block pointed to by bp from the free list
 */
 static void flist_remove(void* bp) {
 
-  // We always need to set the forward item's back pointer
-  SET_BCK_PTR(FWD_PTR(bp), BCK_PTR(bp));
-
   // Case 1: Block we're allocating isn't the first item in our free list
-  if (BCK_PTR(bp)) {
-    SET_FWD_PTR(BCK_PTR(bp), FWD_PTR(bp));
+  if (BACK_PTR(bp) != 0) {
+    printf("previous\n");
+    SET_FWD_PTR(BACK_PTR(bp), FWD_PTR(bp));
   } else { // Case 2: The block we're allocating is the first item in our free list
+    printf("no previous\n");
     start_flist = FWD_PTR(bp);
   }
+  // We always need to set the forward item's back pointer
+  printf("not working\n");
+  SET_BACK_PTR(FWD_PTR(bp), BACK_PTR(bp));
 
 }
 
 /*
-*
+* A method to add the free block at bp to our list
 */
 static void flist_add(void*bp) {
+  printf("flistadd\n");
   SET_FWD_PTR(bp, start_flist);
-  SET_BCK_PTR(start_flist, bp);
-  SET_BCK_PTR(bp, NULL);
+  SET_BACK_PTR(start_flist, bp);
+  SET_BACK_PTR(bp, NULL);
   start_flist = bp;
+}
 
+
+/*********************************************************
+ * HEAP CHECKING FUNCTIONS
+ ********************************************************/
+
+static void printblock(void *bp)
+{
+    size_t hsize, halloc, fsize, falloc;
+
+    // checkheap(0);
+    hsize = GET_SIZE(HDRP(bp));
+    halloc = GET_ALLOC(HDRP(bp));
+    fsize = GET_SIZE(FTRP(bp));
+    falloc = GET_ALLOC(FTRP(bp));
+
+    if (hsize == 0) {
+        printf("%p: EOL\n", bp);
+        return;
+    }
+
+    printf("%p: header: [%ld:%c] footer: [%ld:%c]\n", bp,
+           hsize, (halloc ? 'a' : 'f'),
+           fsize, (falloc ? 'a' : 'f'));
+}
+
+static void checkblock(void *bp)
+{
+    if ((size_t)bp % 8)
+        printf("Error: %p is not doubleword aligned\n", bp);
+    if (GET(HDRP(bp)) != GET(FTRP(bp)))
+        printf("Error: header does not match footer\n");
+}
+
+/*
+ * checkheap - Minimal check of the heap for consistency
+ */
+void checkheap(int verbose)
+{
+    char *bp = heap_listp;
+
+    if (verbose)
+        printf("Heap (%p):\n", heap_listp);
+
+    if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
+        printf("Bad prologue header\n");
+    checkblock(heap_listp);
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (verbose)
+            printblock(bp);
+        checkblock(bp);
+    }
+
+    if (verbose)
+        printblock(bp);
+    if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
+        printf("Bad epilogue header\n");
 }
