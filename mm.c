@@ -26,13 +26,13 @@ team_t team = {
     /* Team name */
     "ateam",
     /* First member's full name */
-    "Cecil Sagehen",
+    "Jack Bernstein",
     /* First member's email address */
-    "cecil.sagehen@pomona.edu",
+    "john.bernstein@pomona.edu",
     /* Second member's full name */
     "Adam Lininger-White",
     /* Second member's email address */
-    "Jack Bernstein"
+    "adla2017@mymail.pomona.edu"
 };
 
 
@@ -94,6 +94,9 @@ static void *extend_heap(size_t words);
 static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
+static void flist_remove(void *bp);
+static void flist_add(void *bp);
+static void free_split(void *fwd, void *bck, void *bp);
 
 
 /*********************************************************
@@ -154,6 +157,8 @@ void *mm_malloc(size_t size)
         asize = 2*DSIZE;
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
+
+
 
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
@@ -227,6 +232,8 @@ static void *extend_heap(size_t words)
     if ((long)(bp = mem_sbrk(size)) == -1)
         return NULL;
 
+    size = MAX(size, 2 * DSIZE);
+
     /* Initialize free block header/footer and the epilogue header */
     PUT(HDRP(bp), PACK(size, 0));         /* Free block header */
     PUT(FTRP(bp), PACK(size, 0));         /* Free block footer */
@@ -248,6 +255,7 @@ static void *coalesce(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
 
     if (prev_alloc && next_alloc) {            /* Case 1 */
+        flist_add(bp);
         return bp;
     }
 
@@ -255,6 +263,10 @@ static void *coalesce(void *bp)
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size,0));
+        SET_FWD_PTR(BCK_PTR(NEXT_BLKP(bp)), bp);
+        SET_BCK_PTR(FWD_PTR(NEXT_BLKP(bp)), bp);
+        SET_FWD_PTR(bp, FWD_PTR(NEXT_BLKP(bp)));
+        SET_BCK_PTR(bp, BCK_PTR(NEXT_BLKP(bp)));
     }
 
     else if (!prev_alloc && next_alloc) {      /* Case 3 */
@@ -284,7 +296,7 @@ static void *find_fit(size_t asize)
   /* First-fit search */
   void* bp;
 
-  for(bp = start_flist; GET_SIZE(HDRP(bp)) > 0; bp = FWD_PTR(bp)) {
+  for(bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
       return bp;
     }
@@ -299,25 +311,55 @@ static void place(void *bp, size_t asize)
 {
   size_t csize = GET_SIZE(HDRP(bp));
 
+  // Case 1: There is enough leftover space to split the block
   if ((csize - asize) >= (2*DSIZE)) {
       PUT(HDRP(bp), PACK(asize, 1));
       PUT(FTRP(bp), PACK(asize, 1));
+      void *back = BCK_PTR(bp);
+      void *fwd  = FWD_PTR(bp);
       bp = NEXT_BLKP(bp);
       PUT(HDRP(bp), PACK(csize-asize, 0));
       PUT(FTRP(bp), PACK(csize-asize, 0));
+      free_split(back, fwd, bp);
+
   }
+  // Case 2: we don't have extra space, so allocate the whole block
   else {
       PUT(HDRP(bp), PACK(csize, 1));
       PUT(FTRP(bp), PACK(csize, 1));
-
-      // Case 1: The block we're allocating is the first item in our free list
-      if (bp == start_flist) {
-        start_flist = FWD_PTR(bp);
-        // NOTE: MAYBE NEED TO THINK ABOUT PREVIOUS POINTER
-      } else { // Case 2: Block we're allocating is anywhere but the head
-        SET_FWD_PTR(BCK_PTR(bp), FWD_PTR(bp));
-        SET_BCK_PTR(FWD_PTR(bp), BCK_PTR(bp));
-      }
-
+      //flist_remove(bp);
   }
+}
+
+static void free_split(void* back, void* fwd, void* bp) {
+  SET_BCK_PTR(bp, back);
+  SET_FWD_PTR(bp, fwd);
+}
+
+/*
+* Remove the block pointed to by bp from the free list
+*/
+static void flist_remove(void* bp) {
+
+  // We always need to set the forward item's back pointer
+  SET_BCK_PTR(FWD_PTR(bp), BCK_PTR(bp));
+
+  // Case 1: Block we're allocating isn't the first item in our free list
+  if (BCK_PTR(bp)) {
+    SET_FWD_PTR(BCK_PTR(bp), FWD_PTR(bp));
+  } else { // Case 2: The block we're allocating is the first item in our free list
+    start_flist = FWD_PTR(bp);
+  }
+
+}
+
+/*
+*
+*/
+static void flist_add(void*bp) {
+  SET_FWD_PTR(bp, start_flist);
+  SET_BCK_PTR(start_flist, bp);
+  SET_BCK_PTR(bp, NULL);
+  start_flist = bp;
+
 }
